@@ -1,166 +1,56 @@
-# macOS Video Optimizer
+# macos-video-optimizer
 
-A Finder Quick Action for macOS that uses FFmpeg to compress videos with **H.264 (libx264), CRF 24, preset medium, yuv420p, AAC 96 kbps, and faststart** — while trying to avoid unnecessary lossy re-encoding.
+[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-The workflow is designed for one-click use from Finder:
+A macOS Finder Quick Action that compresses videos to H.264 MP4 with FFmpeg. A pre-flight sample estimates whether encoding is worthwhile before the workflow processes the full video.
 
-`Right-click video → Quick Actions → Optimize Video`
+### Features
 
-## Why this exists
-
-Blindly re-encoding every video can waste time, increase file size, or reduce quality for little benefit. This workflow performs a short pre-flight analysis before the full encode.
-
-It:
-
-- detects files previously processed by Video Optimizer using embedded metadata
-- samples the video at approximately 10%, 50%, and 90%
-- encodes those samples with the actual CRF 24 target settings
-- compares source video packet bytes with encoded video packet bytes
-- estimates whether a full encode is likely to save meaningful space
-- warns before re-encoding when the expected gain is small or negative
-- keeps the original file unchanged
-- never overwrites an existing output
-- performs a post-encode size check
-- keeps per-run logs and exposes them from the final dialog
-- skips HDR / high-bit-depth video rather than silently converting it to SDR
+- Samples the video at three points and estimates size reduction using the target encoding settings.
+- Warns before encoding when expected savings are small, negative, or unavailable.
+- Preserves the original and never overwrites an existing output.
+- Checks the actual size after encoding and lets you delete or keep a result with little or no savings.
+- Detects its own outputs by an embedded fingerprint to prevent repeat lossy encoding, including after files are renamed.
+- Skips likely HDR and high-bit-depth video rather than converting it silently to 8-bit SDR.
+- Creates per-run logs and offers **View Log** in the final dialog.
 
 ## Requirements
 
-- macOS
-- Automator
-- Homebrew FFmpeg with `ffprobe`
+- macOS with Automator
+- FFmpeg and `ffprobe`
 - zsh
 
-Install FFmpeg:
-
-```bash
-brew install ffmpeg
-```
-
-The script checks the standard Homebrew locations:
-
-- Apple Silicon: `/opt/homebrew/bin/ffmpeg`
-- Intel: `/usr/local/bin/ffmpeg`
+The script checks the standard Homebrew paths for Apple Silicon and Intel, then falls back to `PATH`.
 
 ## Installation
 
-See [docs/automator-setup.md](docs/automator-setup.md) for the full Finder Quick Action setup.
+Install FFmpeg (for example, with `brew install ffmpeg`), then follow [the Finder Quick Action setup](docs/automator-setup.md).
 
-In short:
+## Usage
 
-1. Open **Automator**.
-2. Create a **Quick Action**.
-3. Set:
-   - Workflow receives current: **files or folders**
-   - in: **Finder.app**
-4. Add **Run Shell Script**.
-5. Set:
-   - Shell: `/bin/zsh`
-   - Pass input: **as arguments**
-6. Paste the contents of [video-optimizer.zsh](video-optimizer.zsh).
-7. Save as **Optimize Video**.
+In Finder, right-click a video and choose **Quick Actions → Optimize Video**. The output is saved beside the original as `filename_optimised.mp4`; if that name exists, a numbered name is used.
 
-## Encoding profile
+The output profile is H.264 (`libx264`), CRF 24, medium preset, `yuv420p`, AAC at 96 kbps when audio is present, and MP4 faststart. Odd dimensions are padded to even dimensions.
 
-```text
-Video: H.264 / libx264
-Preset: medium
-CRF: 24
-Pixel format: yuv420p
-Audio: AAC 96 kbps
-Container: MP4
-Faststart: enabled
-```
+## Safety and behavior
 
-Odd video dimensions are padded to even dimensions so libx264 + yuv420p can encode safely.
+The pre-flight analysis samples approximately 10%, 50%, and 90% of the video. Estimated savings of 15% or more proceed automatically; smaller or negative savings default to Skip. If sampling fails, the workflow asks before continuing. These estimates are a heuristic and may differ from the full encode.
 
-## Pre-flight decision logic
+After encoding, results that are less than 5% smaller or larger than the source prompt whether to **Delete Result** or **Keep Result**. The original remains unchanged. HEVC sources may grow when converted to H.264 and may incur another lossy generation; the pre-flight check is intended to identify this risk.
 
-The workflow measures three short samples using the same video encoding profile as the final output.
-
-| Estimated result | Default behaviour |
-|---|---|
-| 15% or more smaller | Encode automatically |
-| 5–15% smaller | Warn, default to Skip |
-| Less than 5% smaller | Warn, default to Skip |
-| Larger than source | Warn that output is expected to grow, default to Skip |
-| Sample analysis unavailable | Fail closed: ask before continuing |
-
-The estimate is a heuristic, not an exact prediction. Its purpose is to decide whether a full lossy encode is likely to be worthwhile.
-
-## Post-encode safeguard
-
-After encoding, the actual file sizes are compared.
-
-If the result is less than 5% smaller — or is larger than the original — the workflow asks whether to **Delete Result** or **Keep Result**.
-
-The original is never deleted or overwritten.
-
-## Fingerprint protection
-
-Outputs contain a metadata marker such as:
-
-```text
-VideoOptimizer:v2.3.3;profile=H264-CRF24-medium-AAC96
-```
-
-This lets the workflow recognise its own outputs even after they are renamed, preventing accidental repeated lossy encoding.
-
-Legacy files matching the `*_optimised.mp4` naming pattern are also skipped as a secondary safeguard.
-
-## HDR / high-bit-depth safety
-
-The current profile is intentionally targeted at ordinary 8-bit SDR video.
-
-The workflow skips inputs that appear to be HDR or high-bit-depth, including common signals such as:
-
-- 10-bit / 12-bit pixel formats
-- BT.2020 primaries
-- PQ / SMPTE ST 2084
-- HLG / ARIB STD-B67
-
-This is deliberate: converting HDR video to 8-bit SDR correctly requires explicit colour-management or tone-mapping decisions.
-
-## HEVC note
-
-HEVC is often more bitrate-efficient than H.264. Converting a well-compressed HEVC source to H.264 CRF 24 can therefore **increase file size** while also introducing another lossy generation.
-
-The pre-flight sampler is intended to catch this before the full encode and warn the user.
+Likely HDR or high-bit-depth sources, including common 10-bit / 12-bit, BT.2020, PQ, and HLG signals, are skipped. The workflow uses the first video and first audio stream; subtitles and data streams are not preserved.
 
 ## Logs
 
-Each run writes a unique log under the current macOS temporary directory.
-
-The final dialog includes **View Log**, which opens the exact log for that run in TextEdit.
-
-A convenience copy of the latest completed run is also maintained:
+The final dialog can open the current run's log in TextEdit. The latest completed run is also available at:
 
 ```bash
 cat "${TMPDIR%/}/video-optimizer-$(id -u)-latest.log"
 ```
 
-## Current version
-
-**v2.3.3**
-
-This version has been manually tested with:
-
-- H.264 source videos where recompression produces substantial savings
-- already compressed sources where recompression provides little or no benefit
-- HEVC sources where H.264 conversion can increase size
-- renamed Video Optimizer outputs detected through the metadata fingerprint
-- audio and no-audio paths
-- filenames containing spaces and Unicode
-- odd video dimensions
-- Finder Quick Action execution via Automator
-
 ## Limitations
 
-- HDR / high-bit-depth conversion is intentionally not supported.
-- Only the first video and first audio stream are used.
-- Subtitle and data streams are not preserved.
-- Pre-flight size estimates are based on sampled regions and can differ from the final full-file result.
-- The workflow optimises for simple Finder-based compatibility, not archival or mastering workflows.
+This workflow targets ordinary 8-bit SDR video and simple Finder-based compatibility, not archival or mastering use. Sampled size estimates are not exact predictions of full-file results.
 
 ## License
 
