@@ -54,4 +54,4 @@ This workflow targets ordinary 8-bit SDR video and simple Finder-based compatibi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+macos-video-optimizer is released under the MIT License. See [LICENSE](LICENSE).
